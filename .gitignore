@@ -25,3 +25,6 @@ gba/gbajams.elf
 gba/host_render
 gba/gbajams_preview.wav
 gba/mixer.o
+
+# emulator save files
+*.sav
