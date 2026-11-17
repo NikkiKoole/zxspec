@@ -16,6 +16,7 @@ an emulator.
 | SNES | S-SMP / S-DSP | BRR samples, hardware echo; a 22-byte SPC700 relay, music logic on the 65816 | `snes/` |
 | DOS PC | AdLib OPL3 + Sound Blaster | OPL3 FM bass/e-piano/echo/pads, SB DMA drum samples, mode 13h plasma | `dos/` |
 | Amiga 500 | Paula (4 x 8-bit, hard stereo) | sampled FM after the Mega Drive patches, bootblock disk, copper bars | `amiga/` |
+| Game Boy Advance | Direct Sound (2 x 8-bit DAC) + a software mixer | Karplus-Strong plucked strings synthesised live, warm sub bass, detuned saw pads, drum samples, ping-pong echo; Mode 7 floor via HBlank DMA | `gba/` |
 | PICO-8 | 4 channels, 8 waveforms, SFX effects + filters | saw bass, triangle arp with reverb, fast-arpeggio chord pads, kick/snare/hat; 2-bar chunks shared to fit 64 SFX | `pico8/` |
 
 `groove.py` is the shared song (one row per 16th note); `font5x7.py` is a small hand-drawn
@@ -33,6 +34,7 @@ brew install acme cc65 nasm m68k-elf-binutils
 # emulators
 brew install vice blastem stella               # C64, Mega Drive, Atari 2600
 brew install --cask snes9x fs-uae-emulator dosbox-staging-app   # SNES, Amiga, DOS
+brew install arm-none-eabi-gcc && brew install --cask mgba-app  # GBA
 ```
 
 PICO-8 is commercial (lexaloffle.com); the cart expects it in `/Applications/PICO-8.app`.
@@ -50,6 +52,8 @@ Things that tripped us up:
 - `brew install ares` is **not** the emulator (it is a text-decoding tool). Use Snes9x.
 - The Homebrew **cask** for Stella is disabled (Gatekeeper); the **formula** (`brew install stella`) works.
 - FCEUX showed a black screen on this Mac, so the NES version runs in the browser instead.
+- The Homebrew `mgba` formula failed to start (ffmpeg library version mismatch); the
+  `mgba-app` cask bundles its own libraries.
 - PICO-8's headless `-export foo.wav` writes silent files on this Mac, so PICO-8 audio can
   only be checked by ear.
 
@@ -76,13 +80,14 @@ From this folder:
 | SNES | `/Applications/Snes9x.app/Contents/MacOS/Snes9x snes/snesjams.sfc` (or File > Open in Snes9x) |
 | DOS | `"/Applications/DOSBox Staging.app/Contents/MacOS/dosbox" dos/dosjams.com` (ESC quits) |
 | Amiga | `/Applications/FS-UAE.app/Contents/MacOS/fs-uae amiga/amigajams.fs-uae` |
+| GBA | `/Applications/mGBA.app/Contents/MacOS/mGBA gba/gbajams.gba` |
 | PICO-8 | `/Applications/PICO-8.app/Contents/MacOS/pico8 -run "$PWD/pico8/picojams.p8"` |
 
 ## Changing the song
 
 Edit `groove.py` (roots, chord tones, the arpeggio shape, the drum grooves and which bar
-uses which), then `./build-all.sh`. The C64, NES, Mega Drive, SNES, DOS, Amiga, 2600 and
-PICO-8 versions all pick it up; the two Spectrum versions predate it and carry their own copy.
+uses which), then `./build-all.sh`. The C64, NES, Mega Drive, SNES, DOS, Amiga, 2600,
+PICO-8 and GBA versions all pick it up; the two Spectrum versions predate it and carry their own copy.
 For the 2600, `python3 atari2600/tuning.py` shows how far each note lands from true pitch
 in every key, since that chip can only play 32 pitches per tone mode.
 
@@ -110,6 +115,17 @@ in every key, since that chip can only play 32 pitches per tone mode.
   port 2 = value); samples are encoded to BRR by `build.py`.
 - **DOS** — Sound Blaster DMA can't cross a 64 KB page, so each sample is copied to a
   page-safe buffer at start-up.
+- **GBA** — the GBA can only play two streams of 8-bit samples, so `mixer.c` *is* the
+  sound chip: plucked strings (Karplus-Strong), sub bass, saw pads, drum samples and an
+  echo, mixed to 304 samples per frame (18157 Hz: exactly one frame). `mixer.c` has no
+  GBA code, so `build.py` also compiles it on the Mac and writes `gbajams_preview.wav`,
+  which is how levels and clicks were checked. Lessons: envelopes must glide per sample
+  (per-frame steps buzz at 60 Hz), notes should start at a zero crossing, and the mixer
+  must run from IWRAM as ARM code (`gba.ld` puts `mixer.o` there) — as Thumb code from
+  ROM it overran the frame once the pads came in, and an overrun lets the sound DMA run
+  past its buffer (pings, noise). The on-screen LATE counter counts overrun frames; the
+  CPU meter alone can't show overload because it wraps. The header has no Nintendo logo,
+  which emulators ignore but a real GBA would refuse (devkitPro's `gbafix` adds it).
 - **PICO-8** — the cart is plain text (`__lua__`, `__sfx__`, `__music__`) written by
   `build.py`. The Lua reads back from SFX memory which note each channel is on to drive
   the meters. The SFX filter byte is encoded as `1 + noiz*2 + buzz*4 + detune*8 +

@@ -18,3 +18,10 @@ dos/gen_*.asm
 
 # macOS
 .DS_Store
+
+# GBA build outputs (rebuilt by gba/build.py)
+gba/gen.h
+gba/gbajams.elf
+gba/host_render
+gba/gbajams_preview.wav
+gba/mixer.o
