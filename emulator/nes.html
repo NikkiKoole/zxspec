@@ -1,0 +1,49 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>NES Jams</title>
+<script src="https://unpkg.com/jsnes@1.2.1/dist/jsnes.min.js"></script>
+<style>
+  body { background:#222; color:#ccc; font-family:monospace; text-align:center; }
+  canvas { width:512px; height:480px; max-width:100%; image-rendering:pixelated; margin-top:20px; cursor:pointer; }
+  a { color:#8cf; }
+</style>
+</head><body>
+<canvas id="c" width="256" height="240"></canvas>
+<p id="hint">Click the screen to start (browsers need a click before audio).</p>
+<p><a href="index.html">Speccy Jams</a> · <a href="jams2.html">Speccy Jams 2</a></p>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const img = ctx.createImageData(256, 240);
+const SAMPLES = 8192, bufL = new Float32Array(SAMPLES), bufR = new Float32Array(SAMPLES);
+let wr = 0, rd = 0;
+const nes = new jsnes.NES({
+  sampleRate: 44100,
+  onFrame(buf) {
+    for (let i = 0; i < 256 * 240; i++) {
+      const p = buf[i];
+      img.data[i*4] = p & 0xff; img.data[i*4+1] = (p >> 8) & 0xff;
+      img.data[i*4+2] = (p >> 16) & 0xff; img.data[i*4+3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  },
+  onAudioSample(l, r) { bufL[wr] = l; bufR[wr] = r; wr = (wr + 1) & (SAMPLES - 1); }
+});
+let started = false;
+canvas.onclick = async () => {
+  if (started) return;
+  started = true;
+  document.getElementById('hint').textContent = 'Playing: same groove, on the NES 2A03.';
+  const ab = await (await fetch('nesjams.nes')).arrayBuffer();
+  let s = ''; for (const x of new Uint8Array(ab)) s += String.fromCharCode(x);
+  nes.loadROM(s);
+  const ac = new AudioContext({ sampleRate: 44100 });
+  const node = ac.createScriptProcessor(1024, 0, 2);
+  node.onaudioprocess = e => {
+    const L = e.outputBuffer.getChannelData(0), R = e.outputBuffer.getChannelData(1);
+    // keep ~2 frames of audio buffered: run the emulator as audio is needed
+    while (((wr - rd) & (SAMPLES - 1)) < L.length + 1470) nes.frame();
+    for (let i = 0; i < L.length; i++) { L[i] = bufL[rd]; R[i] = bufR[rd]; rd = (rd + 1) & (SAMPLES - 1); }
+  };
+  node.connect(ac.destination);
+};
+</script></body></html>

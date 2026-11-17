@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+
+# assembler / linker intermediates (rebuilt by each build.py)
+*.o
+*.map
+amiga/boot.bin
+amiga/main.bin
+
+# generated sources (written by each build.py)
+c64/song.asm
+nes/gen_data.inc
+megadrive/gen_*.s
+snes/gen_data.inc
+amiga/gen_*.s
+atari2600/gen.inc
+dos/gen_*.asm
+
+# macOS
+.DS_Store

@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Speccy Jams</title>
+        <script src="jsspeccy/jsspeccy.js"></script>
+        <style>
+            body { background-color: #222; color: #ccc; font-family: monospace; text-align: center; }
+            #jsspeccy { width: 640px; margin: 20px auto; background-color: white; }
+        </style>
+    </head>
+    <body onload="emu = JSSpeccy(document.getElementById('jsspeccy'), {zoom: 2, machine: 48, openUrl: 'jams.tap', autoLoadTapes: true})">
+        <div id="jsspeccy"></div>
+        <p>Click play (browsers need a click before audio). Then: A W S E D F T G Y H U J K = notes, P = replay, Q = quit. <a href="jams2.html" style="color:#8cf">Jams 2 (two channels)</a></p>
+    </body>
+</html>
