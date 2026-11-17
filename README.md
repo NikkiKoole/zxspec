@@ -21,6 +21,8 @@ an emulator.
 | Game Boy Advance | Direct Sound (2 x 8-bit DAC) + a software mixer | Karplus-Strong plucked strings synthesised live, warm sub bass, detuned saw pads, drum samples, ping-pong echo; Mode 7 floor via HBlank DMA | `gba/` |
 | PICO-8 | 4 channels, 8 waveforms, SFX effects + filters | saw bass, triangle arp with reverb, fast-arpeggio chord pads, kick/snare/hat; 2-bar chunks shared to fit 64 SFX | `pico8/` |
 
+What we learned along the way, for programming in general: [LESSONS.md](LESSONS.md).
+
 `groove.py` is the shared song (one row per 16th note); `font5x7.py` is a small hand-drawn
 font for the machines without one. A "next generation" fantasy-chip version, `dreamchip`,
 lives in the dreamengine repo (`tools/carts/dreamchip.c`).
