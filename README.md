@@ -15,6 +15,7 @@ an emulator.
 | Commodore 64 | SID | filtered pulse bass, triangle arpeggio, noise drums, raster bars | `c64/` |
 | Sega Mega Drive | YM2612 FM + SN76489 | FM slap bass, FM e-piano (stereo ping-pong), FM pads, DAC drum samples via a Z80 player; parallax, per-line sky bars, shadow/highlight orbs | `megadrive/` |
 | SNES | S-SMP / S-DSP | BRR samples, hardware echo; a 22-byte SPC700 relay, music logic on the 65816 | `snes/` |
+| PC speaker | 1-bit speaker + 8253 timer | a tour of the tricks: one square wave with drums cutting in; hopping between bass and arpeggio (fake polyphony); "RealSound" PWM playing a full software mix | `pcspeaker/` |
 | DOS PC | AdLib OPL3 + Sound Blaster | OPL3 FM bass/e-piano/echo/pads, SB DMA drum samples, mode 13h plasma | `dos/` |
 | Amiga 500 | Paula (4 x 8-bit, hard stereo) | sampled FM after the Mega Drive patches, bootblock disk, copper bars | `amiga/` |
 | Game Boy Advance | Direct Sound (2 x 8-bit DAC) + a software mixer | Karplus-Strong plucked strings synthesised live, warm sub bass, detuned saw pads, drum samples, ping-pong echo; Mode 7 floor via HBlank DMA | `gba/` |
@@ -81,6 +82,7 @@ From this folder:
 | Mega Drive | `blastem megadrive/mega.bin` |
 | SNES | `/Applications/Snes9x.app/Contents/MacOS/Snes9x snes/snesjams.sfc` (or File > Open in Snes9x) |
 | DOS | `"/Applications/DOSBox Staging.app/Contents/MacOS/dosbox" dos/dosjams.com` (ESC quits) |
+| PC speaker | `"/Applications/DOSBox Staging.app/Contents/MacOS/dosbox" --set cpu_cycles=max pcspeaker/pcjams.com` (ESC quits) |
 | Amiga | `/Applications/FS-UAE.app/Contents/MacOS/fs-uae amiga/amigajams.fs-uae` |
 | GBA | `/Applications/mGBA.app/Contents/MacOS/mGBA gba/gbajams.gba` |
 | PICO-8 | `/Applications/PICO-8.app/Contents/MacOS/pico8 -run "$PWD/pico8/picojams.p8"` |
@@ -121,6 +123,13 @@ in every key, since that chip can only play 32 pitches per tone mode.
   length, because one odd-sized table put all the tiles and maps on odd addresses.
 - **SNES** — the sound CPU runs a 22-byte relay (port 0 = handshake, port 1 = DSP register,
   port 2 = value); samples are encoded to BRR by `build.py`.
+- **PC speaker** — PIT channel 0 is reprogrammed to fire IRQ0 at 18643 Hz throughout
+  (restored on exit). Bars 1-8: channel 2 in square-wave mode plays the bass; drum hits
+  take over the speaker (a falling sweep for the kick, random pitches for snare/hat).
+  Bars 9-16: the speaker hops between bass and arpeggio every ~20 ms; hopping faster than
+  a bass note's own period (a low E is ~12 ms) smears the pitch out of tune. Bars 17-33:
+  channel 2 becomes a one-shot whose length is each 6-bit sample (pulse-width modulation),
+  fed from a ring buffer that a software mixer keeps full. Needs `cpu_cycles=max`.
 - **DOS** — Sound Blaster DMA can't cross a 64 KB page, so each sample is copied to a
   page-safe buffer at start-up.
 - **GBA** — the GBA can only play two streams of 8-bit samples, so `mixer.c` *is* the

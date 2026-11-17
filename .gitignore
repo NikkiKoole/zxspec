@@ -15,6 +15,7 @@ snes/gen_data.inc
 amiga/gen_*.s
 atari2600/gen.inc
 dos/gen_*.asm
+pcspeaker/gen_*.asm
 
 # macOS
 .DS_Store
