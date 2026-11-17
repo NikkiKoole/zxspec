@@ -2,8 +2,10 @@
 | YM2612: ch1 bass (centre), ch2 arp (ping-pongs left/right), ch3-5 pad chord
 | (left/centre/right), ch6 = DAC: kick + snare samples streamed by a small Z80
 | program. PSG noise: hi-hat.
-| Visuals: wavy line-scrolled stripes on plane B, palette flash on the kick,
-| text + level meters on plane A.
+| Visuals: a parallax landscape on plane B (mountains, hills and a perspective
+| ground, each line scrolled at its own speed); sky colour bars painted by a
+| per-line interrupt (H-int) writing the backdrop colour; shadow/highlight mode
+| with orb sprites that light the scene up on every kick; text + meters on plane A.
 | build: python3 build.py  (generates gen.s, assembles, links mega.bin)
 
         .equ VDP_DATA, 0xC00000
@@ -24,6 +26,12 @@
         .equ drift,   RAM+14          | word: stripe drift
         .equ songptr, RAM+16          | long
         .equ dptr,    RAM+20          | long: hi-hat sequence (0 = idle)
+        .equ skyscroll, RAM+28        | byte: sky bar offset (read by H-int)
+        .equ fcount,  RAM+30          | word: frame counter
+        .equ hsbuf,   RAM+0x100       | 224 words: next frame's plane B line scroll
+        .equ acc,     RAM+0x300       | 224 words: per-line scroll positions (1/16 px)
+        .equ spbuf,   RAM+0x500       | 6 sprites x 4 words, ready for the VDP
+        .equ NSPRITES, 6
         .equ Z80_TRIGGER, 0xA01FF0    | Z80 RAM: sample id to play
         .equ FRAMES_PER_TICK, 7       | 60 Hz / 7 = 16ths at ~128 bpm
 
@@ -62,7 +70,7 @@ start:
         dbra    %d7,2b
 
         lea     RAM,%a0               | clear our variables
-        moveq   #31,%d7
+        move.w  #0x17F,%d7
 3:      clr.l   (%a0)+
         dbra    %d7,3b
 
@@ -163,12 +171,31 @@ ym_latch_dac:
         rts
 
 fault:  bra.s   fault
-hblank: rte
+| H-int, at the end of every visible line: choose the sky colour for the next line by
+| pointing the backdrop register at one of the 16 ramp colours in palette 2. One
+| register write (no palette write mid-line, so no CRAM dots), and SR goes to $2700
+| first so V-int can never cut in while the VDP control port is in use.
+hblank:
+        move.w  #0x2700,%sr
+        move.l  %d0,-(%sp)
+        moveq   #0,%d0
+        move.b  0xC00008,%d0          | the VDP's line counter
+        add.b   skyscroll,%d0
+        move.l  %a0,-(%sp)
+        lea     skyidx,%a0
+        move.b  (%a0,%d0.w),%d0
+        movea.l (%sp)+,%a0
+        ori.w   #0x8720,%d0           | register 7 = palette 2, colour 0..15
+        move.w  %d0,VDP_CTRL
+        move.l  (%sp)+,%d0
+        rte
 
 vblank:
         movem.l %d0-%d7/%a0-%a6,-(%sp)
-        bsr     music
-        bsr     visuals
+        bsr     vdp_out               | 1. everything that touches the VDP, H-int masked
+        move.w  #0x2300,%sr           | 2. let the sky interrupt run again
+        bsr     music                 |    (music + maths only touch RAM and the YM)
+        bsr     compute
         movem.l (%sp)+,%d0-%d7/%a0-%a6
         rte
 
@@ -329,43 +356,33 @@ note_on:
         bra     ym_write
 
 | ---------------------------------------------------------------- visuals
-visuals:
-        moveq   #0,%d0                | stripe colours brighten on the kick
-        move.b  flash,%d0
-        lsl.w   #3,%d0
-        lea     bgpals,%a0
-        adda.w  %d0,%a0
-        move.l  #CMD_PAL1_C1,VDP_CTRL
-        move.l  (%a0)+,VDP_DATA
-        move.l  (%a0)+,VDP_DATA
-
-        moveq   #0,%d0                | wave amplitude follows the flash too
-        move.b  flash,%d0
-        lsl.w   #8,%d0
-        add.w   %d0,%d0
-        lea     wavetab,%a0
-        adda.w  %d0,%a0
-        move.w  phase,%d2
-        move.w  drift,%d3
-        move.w  #0x8F04,VDP_CTRL      | step 4: only plane B's scroll words
+| Part 1, during V-blank with H-int masked: push last frame's prepared data.
+vdp_out:
+        move.w  #0x8F04,VDP_CTRL      | line scroll: plane B words only (step 4)
         move.l  #CMD_HSCROLL_B,VDP_CTRL
+        lea     hsbuf,%a0
         move.w  #223,%d7
-1:      move.w  %d2,%d0
-        andi.w  #0xFF,%d0
-        add.w   %d0,%d0
-        move.w  (%a0,%d0.w),%d1
-        add.w   %d3,%d1
-        move.w  %d1,VDP_DATA
-        addq.w  #2,%d2
+1:      move.w  (%a0)+,VDP_DATA
         dbra    %d7,1b
         move.w  #0x8F02,VDP_CTRL
-        addq.w  #3,phase
-        addq.w  #1,drift
 
-        tst.b   flash
-        beq.s   2f
-        subq.b  #1,flash
-2:
+        move.l  #CMD_SPRITES,VDP_CTRL | sprites
+        lea     spbuf,%a0
+        moveq   #NSPRITES*4-1,%d7
+2:      move.w  (%a0)+,VDP_DATA
+        dbra    %d7,2b
+
+        moveq   #0,%d0                | the sky ramp (palette 2), brighter on the kick
+        move.b  flash,%d0
+        lsl.w   #5,%d0                | 16 colours = 32 bytes per level
+        lea     skypals,%a0
+        adda.w  %d0,%a0
+        move.l  #0xC0400000,VDP_CTRL  | CRAM colour 32
+        moveq   #7,%d7
+6:      move.l  (%a0)+,VDP_DATA
+        dbra    %d7,6b
+        addq.b  #1,skyscroll
+
         lea     meter,%a2             | meters on plane A
         lea     meter_cmds,%a3
         lea     meter_tiles,%a4
@@ -385,6 +402,63 @@ visuals:
         dbra    %d7,4b
         dbra    %d6,3b
         rts
+
+| Part 2, interrupts allowed: work out next frame in RAM.
+compute:
+        lea     speedtab,%a0          | parallax: every line moves at its own speed
+        lea     acc,%a1
+        lea     hsbuf,%a2
+        move.w  #223,%d7
+1:      move.w  (%a0)+,%d0
+        add.w   %d0,(%a1)
+        move.w  (%a1)+,%d1
+        lsr.w   #4,%d1                | 1/16 px -> px (wraps at 4096 = 8 x 512: seamless)
+        neg.w   %d1
+        move.w  %d1,(%a2)+
+        dbra    %d7,1b
+
+        lea     spbuf,%a0             | orbs: shown while the kick flash lasts, rising as it fades
+        lea     orbs,%a1
+        moveq   #0,%d2
+        move.b  flash,%d2
+        moveq   #4,%d6
+        moveq   #1,%d5                | link to the next sprite
+2:      move.w  (%a1)+,%d0            | x
+        move.w  (%a1)+,%d1            | y
+        tst.w   %d2
+        beq.s   3f
+        add.w   #128,%d1
+        add.w   %d2,%d1
+        add.w   %d2,%d1
+        bra.s   4f
+3:      moveq   #0,%d1                | hidden (above the screen)
+4:      move.w  %d1,(%a0)+
+        move.w  %d5,%d3
+        ori.w   #0x0F00,%d3           | 4x4 tiles
+        move.w  %d3,(%a0)+
+        move.w  #SPRITE_ATTR,(%a0)+
+        add.w   #128,%d0
+        move.w  %d0,(%a0)+
+        addq.w  #1,%d5
+        dbra    %d6,2b
+        move.w  moon+2,%d1            | the moon: always there, bobbing gently
+        add.w   #128,%d1
+        move.w  fcount,%d0
+        lsr.w   #4,%d0
+        andi.w  #3,%d0
+        add.w   %d0,%d1
+        move.w  %d1,(%a0)+
+        move.w  #0x0F00,(%a0)+        | last sprite: link 0
+        move.w  #SPRITE_ATTR,(%a0)+
+        move.w  moon,%d0
+        add.w   #128,%d0
+        move.w  %d0,(%a0)+
+
+        addq.w  #1,fcount
+        tst.b   flash
+        beq.s   5f
+        subq.b  #1,flash
+5:      rts
 
 | ---------------------------------------------------------------- data
         .balign 2

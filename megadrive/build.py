@@ -193,8 +193,8 @@ def tile(pixel):                 # pixel(x, y) -> colour index 0..15
 
 
 tiles = [tile(lambda x, y: 0)]                                   # 0: empty
-for k in range(4):                                               # 1-4: diagonal stripes
-    tiles.append(tile(lambda x, y, k=k: 1 + ((x + y + 8 * k) // 8) % 4))
+for k in range(4):                                               # 1-4: (spare)
+    tiles.append(tile(lambda x, y: 0))
 for c in (2, 3, 4, 5):                                           # 5-8: meter blocks
     tiles.append(tile(lambda x, y, c=c: c if 1 <= y <= 6 else 0))
 while len(tiles) < 32:
@@ -203,49 +203,123 @@ for code in range(32, 96):                                       # 32-95: font
     rows = [int(h, 16) for h in FONT.get(chr(code), "00 00 00 00 00 00 00").split()]
     tiles.append(tile(lambda x, y, rows=rows:
                       1 if y < 7 and 1 <= x <= 5 and rows[y] >> (5 - x) & 1 else 0))
+
+# 96-111: a glowing orb, 32x32, as a 4x4-tile sprite. Its pixels are palette 3 colour 14:
+# in shadow/highlight mode that colour isn't drawn, it LIGHTS UP whatever is underneath.
+ORB_TILE = len(tiles)
+for tx in range(4):                    # sprites store their tiles column by column
+    for ty in range(4):
+        tiles.append(tile(lambda x, y, tx=tx, ty=ty:
+                          14 if (tx * 8 + x - 15.5) ** 2 + (ty * 8 + y - 15.5) ** 2 < 15.5 ** 2 else 0))
+while len(tiles) < 128:
+    tiles.append(tile(lambda x, y: 0))
+
+# ---- the parallax scene on plane B: 512 x 224, palette 1, cut into deduplicated tiles
+SCENE_W, SCENE_H = 512, 224
+MOUNT_Y, HILL_Y, GROUND_Y = 80, 136, 172      # bands that scroll at their own speeds
+
+
+def wave(x, terms):
+    return sum(a * math.sin(2 * math.pi * k * x / SCENE_W + ph) for k, a, ph in terms)
+
+
+scene = [[0] * SCENE_W for _ in range(SCENE_H)]
+for x in range(SCENE_W):
+    top = round(104 + wave(x, [(3, 13, 1.0), (7, 8, 0.0), (13, 4, 2.0)]))
+    slope = wave(x + 1, [(3, 13, 1.0), (7, 8, 0.0), (13, 4, 2.0)]) - wave(x, [(3, 13, 1.0), (7, 8, 0.0), (13, 4, 2.0)])
+    for y in range(MOUNT_Y, HILL_Y):                              # far mountains, snowy peaks
+        if y >= top:
+            scene[y][x] = 6 if (y < top + 3 and top < 98) else (2 if slope < 0 else 3)
+    hill = round(150 + wave(x, [(4, 8, 0.5), (9, 5, 1.0)]))
+    for y in range(HILL_Y, GROUND_Y):                             # nearer hills
+        scene[y][x] = 4 if y < hill else (7 if y == hill else 5)
+    for y in range(GROUND_Y, SCENE_H):                            # the ground: a checkerboard
+        scene[y][x] = 10 if y == GROUND_Y else 8 + (((x // 32) + (y - GROUND_Y) // 6) % 2)
+
+plane_b = [0] * (64 * 32)
+scene_tiles = {}
+for ty in range(SCENE_H // 8):
+    for tx in range(SCENE_W // 8):
+        px = tuple(scene[ty * 8 + y][tx * 8 + x] for y in range(8) for x in range(8))
+        if not any(px):
+            continue
+        if px not in scene_tiles:
+            scene_tiles[px] = len(tiles)
+            tiles.append(tile(lambda x, y, px=px: px[y * 8 + x]))
+        plane_b[ty * 64 + tx] = (1 << 13) | scene_tiles[px]       # palette 1, low priority
+assert len(tiles) < 1536, len(tiles)
 tile_words = [w for t in tiles for w in t]
 
+# per-line scroll speed in 1/16 px per frame: sky still, slow mountains, faster hills,
+# and the ground faster line by line toward the bottom: a fake-perspective floor
+speedtab = []
+for y in range(SCENE_H):
+    if y < MOUNT_Y:
+        speedtab.append(0)
+    elif y < HILL_Y:
+        speedtab.append(4)
+    elif y < GROUND_Y:
+        speedtab.append(10)
+    else:
+        speedtab.append(16 + (y - GROUND_Y) * 48 // (SCENE_H - GROUND_Y))
+
+# ---- plane A: text + meters, HIGH priority so shadow mode leaves them at full brightness
 plane_a = [0] * (64 * 32)
+PRIO = 0x8000
 
 
 def text(row, s, pal, col=None):
     col = (40 - len(s)) // 2 if col is None else col
     for i, ch in enumerate(s):
-        plane_a[row * 64 + col + i] = (pal << 13) | ord(ch)
+        plane_a[row * 64 + col + i] = PRIO | (pal << 13) | ord(ch)
 
 
-text(4, "MEGA JAMS", 2)
-text(6, "FM BASS + EP ARP + PADS + DRUMS", 3)
-text(12, "BASS", 0, col=5)
-text(14, "ARP", 0, col=5)
-text(16, "PADS", 0, col=5)
-text(18, "DRUMS", 0, col=5)
-text(22, "GROOVE BY CLAUDE, 2026", 3)
-meter_cmds = [vram(0xC000 + (row * 64 + 12) * 2) for row in (12, 14, 18, 16)]
-meter_tiles = [5, 6, 7, 8]           # bass, arp, drums, pads
+text(1, "MEGA JAMS", 1)            # palette 1 colour 1 = yellow
+text(2, "FM, DAC, PARALLAX, SHADOW + HIGHLIGHT", 3)
+METER_ROWS = {"BASS": 4, "ARP": 5, "PADS": 6, "DRUMS": 7}
+for label, row in METER_ROWS.items():
+    text(row, label, 0, col=3)
+text(27, "GROOVE BY CLAUDE, 2026", 3)
+meter_cmds = [vram(0xC000 + (row * 64 + 10) * 2) for row in
+              (METER_ROWS["BASS"], METER_ROWS["ARP"], METER_ROWS["DRUMS"], METER_ROWS["PADS"])]
+meter_tiles = [PRIO | t for t in (5, 6, 7, 8)]           # bass, arp, drums, pads
 
-plane_b = [1 + (x + y) % 4 for y in range(32) for x in range(64)]  # palette 1
-
-BG = [(1, 0, 2), (2, 0, 3), (1, 1, 3), (0, 1, 2)]
-bgpals = []
-for level in range(8):
-    for r, g, b in BG:
-        bgpals.append(md(*(min(7, c + round(level * 0.8)) for c in (r, g, b))))
+# ---- sprites: five orbs over the mountains that light up on the kick, and a moon
+ORBS = [(24, 92), (88, 104), (152, 88), (216, 100), (280, 94)]
+MOON = (264, 40)
+SPRITE_ATTR = PRIO | (3 << 13) | ORB_TILE                # palette 3: the highlight operator
 
 palette = [0] * 64
 palette[0:6] = [md(0, 0, 0), md(7, 7, 7), md(2, 7, 2), md(6, 2, 7), md(7, 7, 1), md(7, 4, 1)]
-palette[17:21] = bgpals[0:4]
-palette[33] = md(7, 7, 2)        # pal 2: title yellow
-palette[49] = md(3, 7, 7)        # pal 3: cyan
+palette[16:27] = [0, md(7, 7, 2), md(4, 3, 6), md(3, 2, 5), md(1, 2, 4), md(2, 4, 4), md(7, 7, 7),
+                  md(3, 6, 5), md(4, 2, 5), md(2, 1, 3), md(6, 4, 7)]   # the scene
+palette[49] = md(3, 7, 7)        # pal 3: cyan (colours 14/15 are the highlight/shadow operators)
 
-wavetab = []
+# ---- sky: palette 2 holds a 16-step colour ramp; the per-line interrupt picks a step
+# for each line by rewriting the BACKDROP REGISTER ($87xx). A register write never makes
+# "CRAM dots" (writing palette memory mid-line does). The kick flash swaps in a brighter
+# ramp during V-blank.
+skyidx = []
+for i in range(256):
+    a = 2 * math.pi * i / 256
+    bar = max(0.0, math.sin(3 * a)) ** 4
+    skyidx.append(max(0, min(15, round(2 + 2 * math.sin(a) + 11 * bar))))
+skypals = []
 for level in range(8):
-    amp = 6 + level * 5
-    wavetab += [round(amp * math.sin(2 * math.pi * i / 256)) & 0xFFFF for i in range(256)]
+    for k in range(16):
+        f = k / 15
+        r = 1 + 4 * f * f + level * 0.45
+        g = 0.2 + 1.5 * f * f + level * 0.3
+        b_ = 2 + 4 * f + level * 0.45
+        skypals.append(md(*(max(0, min(7, round(v))) for v in (r, g, b_))))
+palette[32:48] = skypals[0:16]
 
-VDP_REGS = [0x8004, 0x8174, 0x8230, 0x832C, 0x8407, 0x855C, 0x8600, 0x8700,
-            0x8800, 0x8900, 0x8A00, 0x8B03, 0x8C81, 0x8D2F, 0x8E00, 0x8F02,
-            0x9001, 0x9100, 0x9200]
+VDP_REGS = [0x8014,              # line interrupt on
+            0x8174, 0x8230, 0x832C, 0x8407, 0x855C, 0x8600, 0x8700,
+            0x8800, 0x8900, 0x8A00,  # line interrupt on every line
+            0x8B03,              # per-line horizontal scroll
+            0x8C89,              # H40 + shadow/highlight
+            0x8D2F, 0x8E00, 0x8F02, 0x9001, 0x9100, 0x9200]
 
 # ---------------------------------------------------------------- emit
 song = [b for row in song_rows for b in row]
@@ -267,6 +341,7 @@ def bytes_(label, data, per=24):
     out = [f"{label}:"]
     for i in range(0, len(data), per):
         out.append("        .byte " + ", ".join(f"0x{v:02X}" for v in data[i:i + per]))
+    out.append("        .balign 2      | keep whatever follows on an even address (68000 words)")
     return "\n".join(out)
 
 
@@ -282,6 +357,8 @@ with open(os.path.join(HERE, "gen_equ.s"), "w") as f:
         .equ CMD_PAL1_C1, 0x{0xC0000000 | (34 << 16):08X}
         .equ TILE_WORDS, {len(tile_words)}
         .equ VDP_REG_COUNT, {len(VDP_REGS)}
+        .equ CMD_SPRITES, 0x{vram(0xB800):08X}
+        .equ SPRITE_ATTR, 0x{SPRITE_ATTR:04X}
         .equ Z80_BLOB_LEN, {len(z80_blob)}
 """)
 
@@ -307,14 +384,17 @@ with open(os.path.join(HERE, "gen_data.s"), "w") as f:
         "| generated by build.py",
         words("vdp_regs", VDP_REGS),
         words("palette", palette),
-        words("bgpals", bgpals),
         words("freqtab", freqtab),
         longs("meter_cmds", meter_cmds),
         words("meter_tiles", meter_tiles),
         drumseq("hat_seq", hat),
         bytes_("chordtab", chordtab),
         bytes_("z80_blob", z80_blob, 32),
-        words("wavetab", wavetab),
+        words("skypals", skypals),
+        bytes_("skyidx", skyidx),
+        words("speedtab", speedtab),
+        words("orbs", [v for x, y in ORBS for v in (x, y)]),
+        words("moon", list(MOON)),
         words("tiles", tile_words),
         words("plane_a", plane_a, 32),
         words("plane_b", plane_b, 32),

@@ -12,10 +12,11 @@ an emulator.
 | Atari 2600 | TIA (2 voices, 32 pitches each) | key chosen by a tuning search; drums and arpeggio share a voice; per-scanline colour kernel | `atari2600/` |
 | NES | 2A03 | triangle bass, pulse arpeggio + a delayed pulse "echo", DMC kick sample, noise snare/hat | `nes/` |
 | Commodore 64 | SID | filtered pulse bass, triangle arpeggio, noise drums, raster bars | `c64/` |
-| Sega Mega Drive | YM2612 FM + SN76489 | FM slap bass, FM e-piano (stereo ping-pong), FM pads, DAC drum samples via a Z80 player | `megadrive/` |
+| Sega Mega Drive | YM2612 FM + SN76489 | FM slap bass, FM e-piano (stereo ping-pong), FM pads, DAC drum samples via a Z80 player; parallax, per-line sky bars, shadow/highlight orbs | `megadrive/` |
 | SNES | S-SMP / S-DSP | BRR samples, hardware echo; a 22-byte SPC700 relay, music logic on the 65816 | `snes/` |
 | DOS PC | AdLib OPL3 + Sound Blaster | OPL3 FM bass/e-piano/echo/pads, SB DMA drum samples, mode 13h plasma | `dos/` |
 | Amiga 500 | Paula (4 x 8-bit, hard stereo) | sampled FM after the Mega Drive patches, bootblock disk, copper bars | `amiga/` |
+| PICO-8 | 4 channels, 8 waveforms, SFX effects + filters | saw bass, triangle arp with reverb, fast-arpeggio chord pads, kick/snare/hat; 2-bar chunks shared to fit 64 SFX | `pico8/` |
 
 `groove.py` is the shared song (one row per 16th note); `font5x7.py` is a small hand-drawn
 font for the machines without one. A "next generation" fantasy-chip version, `dreamchip`,
@@ -34,6 +35,8 @@ brew install vice blastem stella               # C64, Mega Drive, Atari 2600
 brew install --cask snes9x fs-uae-emulator dosbox-staging-app   # SNES, Amiga, DOS
 ```
 
+PICO-8 is commercial (lexaloffle.com); the cart expects it in `/Applications/PICO-8.app`.
+
 The Spectrum and NES versions play in the browser, so they need no emulator install
 (JSSpeccy 3 is bundled in `emulator/`; the NES page loads jsnes from unpkg).
 
@@ -47,6 +50,8 @@ Things that tripped us up:
 - `brew install ares` is **not** the emulator (it is a text-decoding tool). Use Snes9x.
 - The Homebrew **cask** for Stella is disabled (Gatekeeper); the **formula** (`brew install stella`) works.
 - FCEUX showed a black screen on this Mac, so the NES version runs in the browser instead.
+- PICO-8's headless `-export foo.wav` writes silent files on this Mac, so PICO-8 audio can
+  only be checked by ear.
 
 ## Build
 
@@ -71,12 +76,13 @@ From this folder:
 | SNES | `/Applications/Snes9x.app/Contents/MacOS/Snes9x snes/snesjams.sfc` (or File > Open in Snes9x) |
 | DOS | `"/Applications/DOSBox Staging.app/Contents/MacOS/dosbox" dos/dosjams.com` (ESC quits) |
 | Amiga | `/Applications/FS-UAE.app/Contents/MacOS/fs-uae amiga/amigajams.fs-uae` |
+| PICO-8 | `/Applications/PICO-8.app/Contents/MacOS/pico8 -run "$PWD/pico8/picojams.p8"` |
 
 ## Changing the song
 
 Edit `groove.py` (roots, chord tones, the arpeggio shape, the drum grooves and which bar
-uses which), then `./build-all.sh`. The C64, NES, Mega Drive, SNES, DOS, Amiga and 2600
-versions all pick it up; the two Spectrum versions predate it and carry their own copy.
+uses which), then `./build-all.sh`. The C64, NES, Mega Drive, SNES, DOS, Amiga, 2600 and
+PICO-8 versions all pick it up; the two Spectrum versions predate it and carry their own copy.
 For the 2600, `python3 atari2600/tuning.py` shows how far each note lands from true pitch
 in every key, since that chip can only play 32 pitches per tone mode.
 
@@ -91,9 +97,22 @@ in every key, since that chip can only play 32 pitches per tone mode.
 - **Mega Drive** — the YM2612's reset line is tied to the Z80's, so the Z80 sample player
   is started *before* the FM patches are written. The 68000 parks the YM address latch on
   `$2A` after its writes so the Z80's DAC writes land.
+  Visuals: plane B is a 512 px landscape whose lines scroll at their own speeds (parallax,
+  and a perspective floor); an H-int on every line picks the sky colour by rewriting the
+  backdrop register (`$87xx`) into a 16-colour ramp — a register write, because writing
+  CRAM mid-line makes "CRAM dots"; shadow/highlight mode darkens the scene and orb
+  sprites in palette 3 colour 14 light it back up on each kick. Lessons that bit:
+  the V-blank code is split into a short part that talks to the VDP (H-int masked) and
+  the rest (H-int allowed); H-int itself masks to `$2700` so V-int can't cut in between
+  a VDP address write and its data write; and every byte table is padded to an even
+  length, because one odd-sized table put all the tiles and maps on odd addresses.
 - **SNES** — the sound CPU runs a 22-byte relay (port 0 = handshake, port 1 = DSP register,
   port 2 = value); samples are encoded to BRR by `build.py`.
 - **DOS** — Sound Blaster DMA can't cross a 64 KB page, so each sample is copied to a
   page-safe buffer at start-up.
+- **PICO-8** — the cart is plain text (`__lua__`, `__sfx__`, `__music__`) written by
+  `build.py`. The Lua reads back from SFX memory which note each channel is on to drive
+  the meters. The SFX filter byte is encoded as `1 + noiz*2 + buzz*4 + detune*8 +
+  reverb*24 + dampen*72`.
 - **Amiga** — a 1 KB bootblock loads the program into chip RAM via trackdisk; the program
   then turns the OS off and drives Paula and the copper directly.
