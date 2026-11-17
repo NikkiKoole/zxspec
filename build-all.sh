@@ -11,6 +11,7 @@ echo "== Mega Drive";   python3 megadrive/build.py 2>&1 | grep -v "entry symbol"
 echo "== SNES";         python3 snes/build.py
 echo "== Amiga";        python3 amiga/build.py 2>&1 | grep -v "entry symbol"
 echo "== Atari 2600";   python3 atari2600/build.py
+echo "== MSX";          python3 msx/build.py
 echo "== DOS";          python3 dos/build.py
 echo "== PICO-8";       python3 pico8/build.py
 echo "== GBA";          python3 gba/build.py

@@ -10,6 +10,7 @@ an emulator.
 |---|---|---|---|
 | ZX Spectrum | 1-bit beeper | BASIC `BEEP` (jams 1); a hand-assembled Z80 engine mixing two tones + drums on one pin (jams 2) | `jams.bas`, `build_jams2.py`, `emulator/` |
 | Atari 2600 | TIA (2 voices, 32 pitches each) | key chosen by a tuning search; drums and arpeggio share a voice; per-scanline colour kernel | `atari2600/` |
+| MSX | AY-3-8910 PSG | "buzz bass" (the hardware envelope as a repeating sawtooth tuned to the note), square arpeggio, noise/tone drums; rainbow colour-table cycling | `msx/` |
 | NES | 2A03 | triangle bass, pulse arpeggio + a delayed pulse "echo", DMC kick sample, noise snare/hat | `nes/` |
 | Commodore 64 | SID | filtered pulse bass, triangle arpeggio, noise drums, raster bars | `c64/` |
 | Sega Mega Drive | YM2612 FM + SN76489 | FM slap bass, FM e-piano (stereo ping-pong), FM pads, DAC drum samples via a Z80 player; parallax, per-line sky bars, shadow/highlight orbs | `megadrive/` |
@@ -32,7 +33,7 @@ You need Python 3 with `numpy` (used by the Amiga build), plus:
 brew install acme cc65 nasm m68k-elf-binutils
 
 # emulators
-brew install vice blastem stella               # C64, Mega Drive, Atari 2600
+brew install vice blastem stella openmsx       # C64, Mega Drive, Atari 2600, MSX
 brew install --cask snes9x fs-uae-emulator dosbox-staging-app   # SNES, Amiga, DOS
 brew install arm-none-eabi-gcc && brew install --cask mgba-app  # GBA
 ```
@@ -44,7 +45,7 @@ The Spectrum and NES versions play in the browser, so they need no emulator inst
 
 No copyrighted system ROMs are needed for anything here: the Spectrum 48K ROM ships with
 JSSpeccy (Amstrad allows that), VICE ships the C64 ROMs, the Mega Drive / SNES / NES /
-2600 need none, FS-UAE falls back to the free AROS Kickstart replacement, and DOSBox has
+2600 need none, the MSX runs on C-BIOS (a free MSX BIOS that openMSX ships), FS-UAE falls back to the free AROS Kickstart replacement, and DOSBox has
 its own BIOS.
 
 Things that tripped us up:
@@ -75,6 +76,7 @@ From this folder:
 |---|---|
 | ZX Spectrum, NES | `cd emulator && python3 -m http.server 8765`, then open <http://localhost:8765/> (Spectrum 1), `/jams2.html` (Spectrum 2) or `/nes.html` (NES). Click once to allow sound. |
 | Atari 2600 | `stella atari2600/atarijams.bin` |
+| MSX | `openmsx -machine C-BIOS_MSX1_JP -cart msx/msxjams.rom` |
 | C64 | `x64sc -autostart c64/c64jams.prg` |
 | Mega Drive | `blastem megadrive/mega.bin` |
 | SNES | `/Applications/Snes9x.app/Contents/MacOS/Snes9x snes/snesjams.sfc` (or File > Open in Snes9x) |
@@ -87,7 +89,7 @@ From this folder:
 
 Edit `groove.py` (roots, chord tones, the arpeggio shape, the drum grooves and which bar
 uses which), then `./build-all.sh`. The C64, NES, Mega Drive, SNES, DOS, Amiga, 2600,
-PICO-8 and GBA versions all pick it up; the two Spectrum versions predate it and carry their own copy.
+MSX, PICO-8 and GBA versions all pick it up; the two Spectrum versions predate it and carry their own copy.
 For the 2600, `python3 atari2600/tuning.py` shows how far each note lands from true pitch
 in every key, since that chip can only play 32 pitches per tone mode.
 
@@ -99,6 +101,12 @@ in every key, since that chip can only play 32 pitches per tone mode.
 - **Atari 2600** — 4 KB ROM: the song is computed per 16th from tiny per-bar tables. The
   kernel writes the background colour and playfield on every line, early enough to beat
   the beam.
+- **MSX** — no Z80 assembler is in Homebrew, so `msx/build.py` contains a small one
+  (the program is Python calls that emit Z80 code; labels resolve in a second pass, short
+  jumps are range-checked). The bass uses the AY's envelope as the waveform: tone A off,
+  volume register = envelope, shape 8 (repeating sawtooth), envelope period
+  `clock / (256 x note frequency)`. openMSX can be scripted (`record start -audioonly`,
+  `screenshot`, `set throttle off`), which is how the pitch and levels were checked.
 - **Mega Drive** — the YM2612's reset line is tied to the Z80's, so the Z80 sample player
   is started *before* the FM patches are written. The 68000 parks the YM address latch on
   `$2A` after its writes so the Z80's DAC writes land.
