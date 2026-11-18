@@ -97,6 +97,28 @@ MSX, PICO-8 and GBA versions all pick it up; the two Spectrum versions predate i
 For the 2600, `python3 atari2600/tuning.py` shows how far each note lands from true pitch
 in every key, since that chip can only play 32 pitches per tone mode.
 
+## Measuring "does it sound like the real chip?"
+
+`compare/compare.py ref.wav ours.wav` compares two renders of the Mega Drive patch-test
+sequence (bass A2 E2 A3, e-piano A3 A4 E5, a C pad chord): a multi-resolution log-mel
+distance per note (shown as a % of a plain sine's distance), the level difference,
+brightness over time and the first six partials.
+
+```bash
+PATCHTEST=1 python3 megadrive/build.py        # -> megadrive/patchtest.bin
+mame genesis -cart megadrive/patchtest.bin -wavwrite ref.wav -seconds_to_run 14 \
+     -nothrottle -video none -sound none -skip_gameinfo     # the real YM2612 (MAME's core)
+# in dreamengine:  node tools/play.js mdref run --headless --frames 840 --wav ours.wav
+python3 compare/compare.py ref.wav ours.wav
+```
+
+What it found (2026-11): FM4's alt mapping gives all modulators one level, so a YM2612
+patch's per-operator volumes don't carry over (the FM4 bass has a strong 2nd harmonic
+the chip doesn't). dreamengine's patch matcher fitted the real bass at loss 0.37 (with
+INSTR_PIPE plus filter/drive/tape). But in a blind A/B the FM4 e-piano and pad were heard
+as "the real chip" and preferred; the matched bass won for punchy grooves, the FM4 bass
+(narrowly) for legato ones. Measurements find differences; ears decide what matters.
+
 ## Notes per machine
 
 - **Spectrum** — `bas2tap.py` is a tiny BASIC tokenizer that writes a `.tap`. Jams 2's

@@ -322,6 +322,18 @@ VDP_REGS = [0x8014,              # line interrupt on
             0x8D2F, 0x8E00, 0x8F02, 0x9001, 0x9100, 0x9200]
 
 # ---------------------------------------------------------------- emit
+# PATCHTEST=1: a fixed sequence of single patches for measuring against other engines
+# (see tools in ../compare): bass A2 E2 A3, e-piano A3 A4 E5, the C pad chord; each held
+# 8 ticks with silence between. Writes patchtest.bin instead of mega.bin.
+PATCHTEST = os.environ.get("PATCHTEST") == "1"
+if PATCHTEST:
+    song_rows = [[0, 0, 0, 0] for _ in range(120)]
+    t = 4
+    for n in (45, 40, 57):                       # bass
+        song_rows[t][0] = n; song_rows[t + 8][0] = 1; t += 12
+    for n in (57, 69, 76):                       # e-piano (channel 2)
+        song_rows[t][1] = n; song_rows[t + 8][1] = 1; t += 12
+    song_rows[t][3] = 2 + chord_names.index("C"); song_rows[t + 16][3] = 1   # pad chord
 song = [b for row in song_rows for b in row]
 freqtab = [fm_freq(midi_hz(m)) for m in range(128)]
 
@@ -404,8 +416,9 @@ with open(os.path.join(HERE, "gen_data.s"), "w") as f:
     ]) + "\n")
 
 subprocess.run(["m68k-elf-as", "-m68000", "-o", "main.o", "main.s"], cwd=HERE, check=True)
-subprocess.run(["m68k-elf-ld", "-Ttext=0", "--oformat", "binary", "-o", "mega.bin", "main.o"],
+OUT = "patchtest.bin" if PATCHTEST else "mega.bin"
+subprocess.run(["m68k-elf-ld", "-Ttext=0", "--oformat", "binary", "-o", OUT, "main.o"],
                cwd=HERE, check=True)
-size = os.path.getsize(os.path.join(HERE, "mega.bin"))
-print(f"mega.bin: {size} bytes; samples end at Z80 ${addr:04X}, "
+size = os.path.getsize(os.path.join(HERE, OUT))
+print(f"{OUT}: {size} bytes; samples end at Z80 ${addr:04X}, "
       f"sample rate {SAMPLE_RATE:.0f} Hz")

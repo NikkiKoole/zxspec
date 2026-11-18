@@ -29,3 +29,6 @@ gba/mixer.o
 
 # emulator save files
 *.sav
+
+# Mega Drive patch-test ROM (megadrive/build.py with PATCHTEST=1)
+megadrive/patchtest.bin
