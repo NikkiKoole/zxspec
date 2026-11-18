@@ -32,3 +32,6 @@ gba/mixer.o
 
 # Mega Drive patch-test ROM (megadrive/build.py with PATCHTEST=1)
 megadrive/patchtest.bin
+emulator/jsspeccy/roms/pentagon-0.rom
+emulator/jsspeccy/roms/trdos.rom
+emulator/jsspeccy/tapeloaders/tape_pentagon*.szx

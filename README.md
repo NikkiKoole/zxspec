@@ -46,10 +46,16 @@ PICO-8 is commercial (lexaloffle.com); the cart expects it in `/Applications/PIC
 The Spectrum and NES versions play in the browser, so they need no emulator install
 (JSSpeccy 3 is bundled in `emulator/`; the NES page loads jsnes from unpkg).
 
-No copyrighted system ROMs are needed for anything here: the Spectrum 48K ROM ships with
-JSSpeccy (Amstrad allows that), VICE ships the C64 ROMs, the Mega Drive / SNES / NES /
+No copyrighted system ROMs are needed for anything here: the Spectrum 48K/128K ROMs ship
+with JSSpeccy (Amstrad allows them to be distributed with emulators), VICE ships the C64 ROMs, the Mega Drive / SNES / NES /
 2600 need none, the MSX runs on C-BIOS (a free MSX BIOS that openMSX ships), FS-UAE falls back to the free AROS Kickstart replacement, and DOSBox has
 its own BIOS.
+
+This repo leaves out the ROMs it may not redistribute. JSSpeccy's Pentagon machine wants
+`emulator/jsspeccy/roms/pentagon-0.rom` and `trdos.rom` (and the matching
+`tapeloaders/tape_pentagon*.szx`); our pages never use them, but if you want that machine,
+take them from the JSSpeccy 3 release at https://github.com/gasman/jsspeccy3/releases.
+PICO-8 is not included either: buy it at lexaloffle.com.
 
 Things that tripped us up:
 
